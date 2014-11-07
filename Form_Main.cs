@@ -13,6 +13,7 @@ namespace WebMCam
     {
         static List<Bitmap> frames = new List<Bitmap>();
 		static Int16 frame_count, saved_frame_count;
+		static Point pt;
 		Int32 time_elapsed;
 		String temp_storage, image_format;
 		Boolean recording;
@@ -42,12 +43,17 @@ namespace WebMCam
 			Ini_File.Exists("Fmt", "pixel", "32bppRgb");
 			Ini_File.Exists("Fmt", "image", "png");
             Ini_File.Exists("Fmt", "delete", "True");
-            Ini_File.Exists("Rec", "threads", Convert.ToString(Environment.ProcessorCount));
 		}
 		
 		void MainFormResize(object sender, EventArgs e)
 		{
 			Text = String.Format("WebMCam {0}x{1}", panel_record.Size.Width, panel_record.Size.Height);
+		}
+		
+		void MainFormMove(object sender, EventArgs e)
+		{
+			// We need to get panel_records absolute position
+			pt = panel_record.PointToScreen(new Point(0, 0));
 		}
 		
 		void Chk_top_mostCheckedChanged(object sender, EventArgs e)
@@ -81,26 +87,18 @@ namespace WebMCam
 					return PixelFormat.Format32bppRgb;
 			}
 		}
-
-        static Point pt;
 		
-		void Timer_frameTick(object sender, EventArgs e)
+		private void timer_frame_Tick(object sender, EventArgs e)
         {
-            pt = panel_record.PointToScreen(new Point(0, 0));
-            ThreadPool.QueueUserWorkItem(delegate(Object state)
-            {
-                // We need to get panel_records absolute position
+            frames.Add(
+                Image_Capture.region(
+                    new Rectangle(pt.X, pt.Y, panel_record.Width, panel_record.Height),
+                    chk_cursor.Checked,
+                    pixel_format_format()
+                )
+            );
 
-                frames.Add(
-                    Image_Capture.region(
-                        new Rectangle(pt.X, pt.Y, panel_record.Width, panel_record.Height),
-                        chk_cursor.Checked,
-                        pixel_format_format()
-                    )
-                );
-
-                frame_count++;
-            });
+            frame_count++;
 		}
 
         private void timer_save_Tick(object sender, EventArgs e)
@@ -114,7 +112,7 @@ namespace WebMCam
             }
         }
 		
-		void start_record(int fps)
+		void start_record(int interval)
 		{
 			temp_storage = String.Format(@"{0}{1}\", Ini_File.Read("Loc", "temp"), DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond);
 			
@@ -122,15 +120,11 @@ namespace WebMCam
 			if(!Directory.Exists(temp_storage))
 				Directory.CreateDirectory(temp_storage);
 
-			Int32 t = Convert.ToInt32(Ini_File.Read("Rec", "threads"));
-			ThreadPool.SetMinThreads(t, 1);
-			ThreadPool.SetMaxThreads(t, 1);
-
             frame_count = 0;
             saved_frame_count = 0;
 			time_elapsed = 1;
 			
-			timer_frame.Interval = 1000 / fps;
+			timer_frame.Period = interval;
 			
 			timer_elapsed.Start();
 			timer_frame.Start();
@@ -139,8 +133,6 @@ namespace WebMCam
 		
 		void stop_record()
 		{
-			ThreadPool.SetMinThreads(0, 0);
-
 			timer_elapsed.Stop();
 			timer_frame.Stop();
             
